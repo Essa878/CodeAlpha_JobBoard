@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Board</title>
+  <style>
+    :root { color-scheme: light dark; --brand: #0d9488; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 960px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; line-height: 1.5; }
+    h1 { margin: 0; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .muted { color: #888; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    input, select, textarea { padding: .55rem .7rem; border: 1px solid #ccc; border-radius: 8px; font: inherit; }
+    button { padding: .5rem .9rem; border: 0; border-radius: 8px; background: var(--brand); color: #fff; cursor: pointer; font: inherit; }
+    button.secondary { background: #6b7280; }
+    button.danger { background: #dc2626; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; margin: .75rem 0; }
+    .card h3 { margin: 0 0 .25rem; }
+    .pill { display: inline-block; font-size: .75rem; padding: .1rem .5rem; border-radius: 999px; background: #ccfbf1; color: #115e59; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    form.stack { display: grid; gap: .5rem; }
+    .tag { font-size: .82rem; color: #888; }
+    .hide { display: none !important; }
+    .error { color: #dc2626; font-size: .9rem; }
+    .wrap { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+    #toast { position: fixed; bottom: 1rem; right: 1rem; background: #111; color: #fff; padding: .6rem 1rem; border-radius: 8px; opacity: 0; transition: opacity .2s; z-index: 50; }
+    #toast.show { opacity: 1; }
+    .nav button.active { background: #115e59; }
+    .item { border-left: 3px solid var(--brand); padding: .5rem .75rem; margin: .4rem 0; background: rgba(13,148,136,.05); border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>JobBoard</h1>
+      <div class="muted" id="whoami">Not signed in</div>
+    </div>
+    <div class="row">
+      <div class="row nav" id="nav"></div>
+      <button class="secondary hide" id="logout">Log out</button>
+    </div>
+  </header>
+
+  <!-- AUTH -->
+  <section id="auth-panel" class="card">
+    <h3>Sign in / Create account</h3>
+    <div class="grid">
+      <form class="stack" id="login-form">
+        <strong>Login</strong>
+        <input name="email" type="email" placeholder="Email" required />
+        <input name="password" type="password" placeholder="Password" required />
+        <button type="submit">Login</button>
+      </form>
+      <form class="stack" id="register-form">
+        <strong>Register</strong>
+        <input name="name" placeholder="Full name" required />
+        <input name="email" type="email" placeholder="Email" required />
+        <input name="password" type="password" placeholder="Password (min 6)" required />
+        <select name="role" id="reg-role">
+          <option value="candidate">Candidate</option>
+          <option value="employer">Employer</option>
+        </select>
+        <input name="companyName" class="hide" id="company-name" placeholder="Company name" />
+        <button type="submit">Create account</button>
+      </form>
+    </div>
+    <p class="error" id="auth-error"></p>
+  </section>
+
+  <!-- JOB SEARCH -->
+  <section id="jobs-panel" class="hide">
+    <div class="row" style="justify-content: space-between;">
+      <h2>Jobs</h2>
+      <div class="row">
+        <input id="f-search" placeholder="Keyword" />
+        <input id="f-location" placeholder="Location" />
+        <select id="f-type">
+          <option value="">Any type</option>
+          <option>full-time</option><option>part-time</option><option>contract</option><option>internship</option>
+        </select>
+        <button class="secondary" id="refresh">Search</button>
+      </div>
+    </div>
+    <div id="jobs"></div>
+  </section>
+
+  <!-- CANDIDATE -->
+  <section id="candidate-panel" class="hide">
+    <div class="grid">
+      <div class="card">
+        <h3>My profile</h3>
+        <form class="stack" id="profile-form">
+          <input name="headline" placeholder="Headline (e.g. Backend Developer)" />
+          <input name="skills" placeholder="Skills (comma separated)" />
+          <button type="submit">Save profile</button>
+        </form>
+        <hr />
+        <form class="stack" id="resume-form">
+          <strong>Resume</strong>
+          <input type="file" name="resume" accept=".pdf,.doc,.docx" required />
+          <button type="submit">Upload resume</button>
+          <span class="tag" id="resume-status"></span>
+        </form>
+      </div>
+      <div class="card">
+        <h3>My applications</h3>
+        <div id="my-applications"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EMPLOYER -->
+  <section id="employer-panel" class="hide">
+    <div class="card">
+      <h3>Post a job</h3>
+      <form class="stack" id="job-form">
+        <input name="title" placeholder="Job title" required />
+        <div class="grid">
+          <input name="location" placeholder="Location" />
+          <select name="jobType">
+            <option>full-time</option><option>part-time</option><option>contract</option><option>internship</option>
+          </select>
+        </div>
+        <div class="grid">
+          <input name="category" placeholder="Category (e.g. Engineering)" />
+          <input name="salaryMin" type="number" placeholder="Salary min" />
+        </div>
+        <textarea name="description" placeholder="Description" rows="2"></textarea>
+        <button type="submit">Publish job</button>
+      </form>
+    </div>
+    <div class="card">
+      <h3>My listings &amp; applicants</h3>
+      <div id="my-jobs"></div>
+    </div>
+  </section>
+
+  <!-- NOTIFICATIONS -->
+  <section id="notif-panel" class="hide">
+    <div class="row" style="justify-content: space-between;">
+      <h2>Notifications <span class="tag" id="unread-tag"></span></h2>
+      <button class="secondary" id="read-all">Mark all read</button>
+    </div>
+    <div id="notifications"></div>
+  </section>
+
+  <div id="toast"></div>
+
+  <script>
+    const state = { token: localStorage.getItem('token') || null, user: null, view: 'jobs' };
+    const $ = (s) => document.querySelector(s);
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+
+    async function api(path, opts = {}) {
+      const headers = opts.headers || {};
+      if (!(opts.body instanceof FormData) && opts.body) headers['Content-Type'] = 'application/json';
+      if (state.token) headers.Authorization = `Bearer ${state.token}`;
+      const res = await fetch(path, { ...opts, headers });
+      const data = res.status === 204 ? null : await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+      return data;
+    }
+
+    /* ---------- navigation ---------- */
+    const NAV = {
+      candidate: [{ id: 'jobs', label: 'Jobs' }, { id: 'candidate', label: 'My Space' }, { id: 'notif', label: 'Alerts' }],
+      employer: [{ id: 'jobs', label: 'Jobs' }, { id: 'employer', label: 'Dashboard' }, { id: 'notif', label: 'Alerts' }],
+      admin: [{ id: 'jobs', label: 'Jobs' }, { id: 'notif', label: 'Alerts' }],
+    };
+    function renderNav() {
+      if (!state.user) { $('#nav').innerHTML = ''; $('#logout').classList.add('hide'); return; }
+      $('#logout').classList.remove('hide');
+      const items = NAV[state.user.role] || [];
+      $('#nav').innerHTML = items.map((i) => `<button class="secondary ${state.view === i.id ? 'active' : ''}" data-view="${i.id}">${i.label}</button>`).join('');
+      $('#nav').querySelectorAll('[data-view]').forEach((b) => b.onclick = () => setView(b.dataset.view));
+    }
+    function setView(v) {
+      state.view = v;
+      renderNav();
+      $('#jobs-panel').classList.toggle('hide', v !== 'jobs');
+      $('#candidate-panel').classList.toggle('hide', v !== 'candidate');
+      $('#employer-panel').classList.toggle('hide', v !== 'employer');
+      $('#notif-panel').classList.toggle('hide', v !== 'notif');
+      if (v === 'jobs') loadJobs();
+      if (v === 'candidate') { loadProfile(); loadMyApplications(); }
+      if (v === 'employer') { loadMyJobs(); }
+      if (v === 'notif') loadNotifications();
+    }
+
+    function renderAuth() {
+      const signedIn = !!state.token && !!state.user;
+      $('#auth-panel').classList.toggle('hide', signedIn);
+      $('#whoami').textContent = signedIn ? `${state.user.name} · ${state.user.role}` : 'Not signed in';
+      $('#logout').onclick = logout;
+      if (!signedIn) {
+        $('#jobs-panel').classList.remove('hide'); state.view = 'jobs'; $('#nav').innerHTML = ''; $('#logout').classList.add('hide');
+        return;
+      }
+      setView(state.view);
+    }
+
+    async function logout() { state.token = null; state.user = null; state.view = 'jobs'; localStorage.removeItem('token'); renderAuth(); }
+    async function loadMe() {
+      if (!state.token) return;
+      try { state.user = (await api('/api/auth/me')).user; }
+      catch { state.token = null; localStorage.removeItem('token'); }
+    }
+
+    /* ---------- jobs ---------- */
+    async function loadJobs() {
+      const p = new URLSearchParams();
+      const s = $('#f-search').value.trim(), l = $('#f-location').value.trim(), t = $('#f-type').value;
+      if (s) p.set('search', s); if (l) p.set('location', l); if (t) p.set('type', t);
+      const rows = await api(`/api/jobs?${p}`);
+      const box = $('#jobs');
+      if (!rows.length) { box.innerHTML = '<p class="muted">No jobs found.</p>'; return; }
+      box.innerHTML = rows.map((j) => `
+        <div class="card">
+          <div class="wrap">
+            <div>
+              <h3>${esc(j.title)} <span class="pill">${esc(j.jobType)}</span></h3>
+              <div class="tag">${esc(j.companyName || j.employerName)} · ${esc(j.location || 'Unspecified')} ${j.category ? '· ' + esc(j.category) : ''}</div>
+              <p>${esc(j.description || '')}</p>
+              <div class="tag">${j.applicantCount} applicant(s) · ${esc(j.status)}</div>
+            </div>
+            <div class="row">
+              ${state.token && state.user && state.user.role === 'candidate' && j.status === 'open'
+                ? `<button data-apply="${j.id}">Apply</button>` : ''}
+            </div>
+          </div>
+        </div>`).join('');
+      box.querySelectorAll('[data-apply]').forEach((b) => b.onclick = async () => {
+        const coverLetter = prompt('Cover letter (optional):') ?? null;
+        if (coverLetter === null) return;
+        try {
+          await api(`/api/jobs/${b.dataset.apply}/apply`, { method: 'POST', body: JSON.stringify({ coverLetter }) });
+          toast('Application submitted'); loadJobs();
+        } catch (e) { toast(e.message); }
+      });
+    }
+
+    /* ---------- candidate ---------- */
+    async function loadProfile() {
+      try {
+        const p = await api('/api/candidates/me');
+        $('#profile-form').headline.value = p.headline || '';
+        $('#profile-form').skills.value = p.skills || '';
+        $('#resume-status').textContent = p.resumeName ? `Current: ${p.resumeName} — ` : '';
+        if (p.resumeUrl) $('#resume-status').innerHTML = `Current: <a href="${esc(p.resumeUrl)}">${esc(p.resumeName)}</a>`;
+      } catch (e) { toast(e.message); }
+    }
+    async function loadMyApplications() {
+      const rows = await api('/api/applications/me');
+      const box = $('#my-applications');
+      if (!rows.length) { box.innerHTML = '<p class="muted">No applications yet.</p>'; return; }
+      box.innerHTML = rows.map((a) => `
+        <div class="item">
+          <strong>${esc(a.job.title)}</strong> <span class="pill">${esc(a.status)}</span>
+          <div class="tag">${esc(a.job.companyName || '')} · ${esc(a.job.location || '')}</div>
+          ${a.status === 'applied' || a.status === 'reviewing' ? `<button class="danger" data-withdraw="${a.id}">Withdraw</button>` : ''}
+        </div>`).join('');
+      box.querySelectorAll('[data-withdraw]').forEach((b) => b.onclick = async () => {
+        try { await api(`/api/applications/${b.dataset.withdraw}`, { method: 'DELETE' }); toast('Withdrawn'); loadMyApplications(); }
+        catch (e) { toast(e.message); }
+      });
+    }
+
+    /* ---------- employer ---------- */
+    async function loadMyJobs() {
+      const rows = await api('/api/jobs/mine');
+      const box = $('#my-jobs');
+      if (!rows.length) { box.innerHTML = '<p class="muted">No listings yet.</p>'; return; }
+      const blocks = await Promise.all(rows.map(async (j) => {
+        const apps = await api(`/api/jobs/${j.id}/applications`).catch(() => []);
+        return `
+          <div class="card">
+            <div class="wrap">
+              <h3>${esc(j.title)} <span class="pill">${esc(j.status)}</span></h3>
+              <div class="row">
+                <button class="secondary" data-toggle="${j.id}" data-status="${j.status === 'open' ? 'closed' : 'open'}">${j.status === 'open' ? 'Close' : 'Reopen'}</button>
+                <button class="danger" data-delete="${j.id}">Delete</button>
+              </div>
+            </div>
+            <div class="tag">${esc(j.location || '')} · ${j.applicantCount} applicant(s)</div>
+            ${apps.length ? apps.map((a) => `
+              <div class="item">
+                <strong>${esc(a.candidate.name)}</strong> <span class="pill">${esc(a.status)}</span>
+                <div class="tag">${esc(a.candidate.email)} · ${esc(a.candidate.headline || '')} ${a.candidate.resumeUrl ? `· <a href="${esc(a.candidate.resumeUrl)}">resume</a>` : ''}</div>
+                <div class="row">
+                  ${['reviewing','shortlisted','hired','rejected'].map((s) => `<button class="secondary" data-app="${a.id}" data-set="${s}" ${a.status === s ? 'disabled' : ''}>${s}</button>`).join('')}
+                </div>
+              </div>`).join('') : '<p class="muted">No applicants yet.</p>'}
+          </div>`;
+      }));
+      box.innerHTML = blocks.join('');
+      box.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
+        try { await api(`/api/jobs/${b.dataset.toggle}`, { method: 'PUT', body: JSON.stringify({ status: b.dataset.status }) }); loadMyJobs(); }
+        catch (e) { toast(e.message); }
+      });
+      box.querySelectorAll('[data-delete]').forEach((b) => b.onclick = async () => {
+        if (!confirm('Delete this job?')) return;
+        try { await api(`/api/jobs/${b.dataset.delete}`, { method: 'DELETE' }); loadMyJobs(); } catch (e) { toast(e.message); }
+      });
+      box.querySelectorAll('[data-app]').forEach((b) => b.onclick = async () => {
+        try { await api(`/api/applications/${b.dataset.app}/status`, { method: 'PATCH', body: JSON.stringify({ status: b.dataset.set }) }); toast('Status updated'); loadMyJobs(); }
+        catch (e) { toast(e.message); }
+      });
+    }
+
+    /* ---------- notifications ---------- */
+    async function loadNotifications() {
+      const data = await api('/api/notifications');
+      $('#unread-tag').textContent = data.unread ? `${data.unread} unread` : '';
+      const box = $('#notifications');
+      if (!data.notifications.length) { box.innerHTML = '<p class="muted">No notifications.</p>'; return; }
+      box.innerHTML = data.notifications.map((n) => `
+        <div class="item ${n.isRead ? '' : 'unread'}">
+          ${n.isRead ? '' : '● '}${esc(n.message)}
+          <div class="tag">${esc(new Date(n.createdAt).toLocaleString())}</div>
+        </div>`).join('');
+    }
+
+    /* ---------- forms ---------- */
+    $('#login-form').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
+        state.token = d.token; state.user = d.user; localStorage.setItem('token', d.token);
+        $('#auth-error').textContent = ''; renderAuth(); loadJobs();
+      } catch (err) { $('#auth-error').textContent = err.message; }
+    };
+    $('#register-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      if (!body.companyName) delete body.companyName;
+      try {
+        const d = await api('/api/auth/register', { method: 'POST', body: JSON.stringify(body) });
+        state.token = d.token; state.user = d.user; localStorage.setItem('token', d.token);
+        $('#auth-error').textContent = ''; renderAuth(); loadJobs();
+      } catch (err) { $('#auth-error').textContent = err.message; }
+    };
+    $('#reg-role').onchange = (e) => $('#company-name').classList.toggle('hide', e.target.value !== 'employer');
+    $('#profile-form').onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api('/api/candidates/me', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }); toast('Saved'); }
+      catch (err) { toast(err.message); }
+    };
+    $('#resume-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try { const r = await api('/api/candidates/me/resume', { method: 'POST', body: fd }); toast('Resume uploaded'); loadProfile(); }
+      catch (err) { toast(err.message); }
+    };
+    $('#job-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      if (body.salaryMin) body.salaryMin = Number(body.salaryMin); else delete body.salaryMin;
+      try { await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) }); e.target.reset(); toast('Job published'); loadMyJobs(); loadJobs(); }
+      catch (err) { toast(err.message); }
+    };
+    $('#refresh').onclick = loadJobs;
+    $('#read-all').onclick = async () => { try { await api('/api/notifications/read-all', { method: 'POST' }); loadNotifications(); } catch (e) { toast(e.message); } };
+
+    (async function init() { await loadMe(); renderAuth(); if (!state.user) { loadJobs(); } })();
+  </script>
+</body>
+</html>
