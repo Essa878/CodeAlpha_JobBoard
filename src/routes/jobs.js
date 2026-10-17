@@ -1,19 +1,19 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { authenticate, requireRole } from '../auth.js';
+import { authenticate, requireRole, optionalAuth } from '../auth.js';
 
 const router = Router();
 const JOB_TYPES = ['full-time', 'part-time', 'contract', 'internship'];
 
 const BASE_QUERY = `
-  SELECT j.*, u.name AS employer_name, e.company_name
+  SELECT j.*, u.name AS employer_name, e.company_name, e.industry
   FROM jobs j
   JOIN users u ON u.id = j.employer_id
   LEFT JOIN employers e ON e.user_id = j.employer_id
 `;
 
-function jobView(row, { applicationCount = 0 } = {}) {
-  return {
+function jobView(row, { applicationCount = 0, application = undefined } = {}) {
+  const view = {
     id: row.id,
     title: row.title,
     description: row.description,
@@ -26,22 +26,39 @@ function jobView(row, { applicationCount = 0 } = {}) {
     employerId: row.employer_id,
     employerName: row.employer_name,
     companyName: row.company_name,
+    industry: row.industry,
     applicantCount: applicationCount,
     createdAt: row.created_at,
   };
+  if (application !== undefined) {
+    view.hasApplied = !!application;
+    view.applicationStatus = application ? application.status : null;
+  }
+  return view;
 }
 
 function countApplicants(jobId) {
   return getDb().prepare('SELECT COUNT(*) AS c FROM applications WHERE job_id = ?').get(jobId).c;
 }
 
-router.get('/', (req, res) => {
-  const { search, location, type, category, employerId } = req.query;
+function candidateApplications(userId) {
+  const map = new Map();
+  if (userId == null) return map;
+  const rows = getDb()
+    .prepare('SELECT job_id, status FROM applications WHERE candidate_id = ?')
+    .all(userId);
+  rows.forEach((r) => map.set(r.job_id, { status: r.status }));
+  return map;
+}
+
+router.get('/', optionalAuth, (req, res) => {
+  const { search, location, type, category, employerId, salaryMin, sort, status } = req.query;
   const clauses = [];
   const params = [];
   if (search) {
     clauses.push('(j.title LIKE ? OR j.description LIKE ? OR j.category LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    params.push(like, like, like);
   }
   if (location) {
     clauses.push('j.location LIKE ?');
@@ -59,9 +76,29 @@ router.get('/', (req, res) => {
     clauses.push('j.employer_id = ?');
     params.push(Number(employerId));
   }
+  if (salaryMin) {
+    clauses.push('(j.salary_max IS NULL OR j.salary_max >= ?)');
+    params.push(Number(salaryMin));
+  }
+  if (status) {
+    clauses.push('j.status = ?');
+    params.push(status);
+  }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const rows = getDb().prepare(`${BASE_QUERY} ${where} ORDER BY j.created_at DESC`).all(...params);
-  res.json(rows.map((row) => jobView(row, { applicationCount: countApplicants(row.id) })));
+  let orderBy = 'j.created_at DESC';
+  if (sort === 'oldest') orderBy = 'j.created_at ASC';
+  else if (sort === 'salary') orderBy = 'j.salary_max IS NULL, j.salary_max DESC';
+
+  const rows = getDb().prepare(`${BASE_QUERY} ${where} ORDER BY ${orderBy}`).all(...params);
+  const mine = candidateApplications(req.user?.role === 'candidate' ? req.user.id : null);
+  res.json(
+    rows.map((row) =>
+      jobView(row, {
+        applicationCount: countApplicants(row.id),
+        application: req.user?.role === 'candidate' ? mine.get(row.id) ?? null : undefined,
+      })
+    )
+  );
 });
 
 router.get('/mine', authenticate, requireRole('employer'), (req, res) => {
@@ -69,6 +106,35 @@ router.get('/mine', authenticate, requireRole('employer'), (req, res) => {
     .prepare(`${BASE_QUERY} WHERE j.employer_id = ? ORDER BY j.created_at DESC`)
     .all(req.user.id);
   res.json(rows.map((row) => jobView(row, { applicationCount: countApplicants(row.id) })));
+});
+
+router.get('/stats', authenticate, requireRole('employer'), (req, res) => {
+  const db = getDb();
+  const jobs = db.prepare('SELECT id, status FROM jobs WHERE employer_id = ?').all(req.user.id);
+  const ids = jobs.map((j) => j.id);
+  let totalApplications = 0;
+  let hires = 0;
+  let shortlisted = 0;
+  if (ids.length) {
+    const ph = ids.map(() => '?').join(',');
+    totalApplications = db
+      .prepare(`SELECT COUNT(*) AS c FROM applications WHERE job_id IN (${ph})`)
+      .get(...ids).c;
+    hires = db
+      .prepare(`SELECT COUNT(*) AS c FROM applications WHERE job_id IN (${ph}) AND status = 'hired'`)
+      .get(...ids).c;
+    shortlisted = db
+      .prepare(`SELECT COUNT(*) AS c FROM applications WHERE job_id IN (${ph}) AND status = 'shortlisted'`)
+      .get(...ids).c;
+  }
+  res.json({
+    totalJobs: jobs.length,
+    openJobs: jobs.filter((j) => j.status === 'open').length,
+    closedJobs: jobs.filter((j) => j.status === 'closed').length,
+    totalApplications,
+    shortlisted,
+    hires,
+  });
 });
 
 router.get('/:id/applications', authenticate, requireRole('employer'), (req, res) => {
@@ -109,10 +175,16 @@ router.get('/:id/applications', authenticate, requireRole('employer'), (req, res
   );
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', optionalAuth, (req, res) => {
   const row = getDb().prepare(`${BASE_QUERY} WHERE j.id = ?`).get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Job not found' });
-  res.json(jobView(row, { applicationCount: countApplicants(row.id) }));
+  let application;
+  if (req.user?.role === 'candidate') {
+    application = getDb()
+      .prepare('SELECT id, status FROM applications WHERE job_id = ? AND candidate_id = ?')
+      .get(row.id, req.user.id) ?? null;
+  }
+  res.json(jobView(row, { applicationCount: countApplicants(row.id), application }));
 });
 
 router.post('/', authenticate, requireRole('employer'), (req, res, next) => {
