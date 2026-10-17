@@ -251,14 +251,17 @@
       let modalMode = mode;
       const root = openModal(`
         <div class="modal-head">
-          <div><h3 id="a-title">Welcome back</h3><div class="muted" style="font-size:.9rem" id="a-sub">Sign in to your account</div></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--accent));display:grid;place-items:center;color:#fff;font-size:1.25rem;box-shadow:0 6px 16px rgba(13,148,136,.4)">💼</div>
+            <div><h3 id="a-title">Welcome back</h3><div class="muted" style="font-size:.9rem" id="a-sub">Sign in to your account</div></div>
+          </div>
           <button class="x">×</button>
         </div>
         <div class="modal-body">
-          <div class="tabs"><button id="t-login" class="active">Login</button><button id="t-reg">Create account</button></div>
+          <div class="tabs" style="justify-content:center"><button id="t-login" class="active">Login</button><button id="t-reg">Sign up</button></div>
           <form id="a-form" class="field" style="gap:12px"></form>
         </div>
-        <div class="modal-foot"><button class="btn ghost" id="a-cancel">Cancel</button><button class="btn primary" id="a-submit" form="a-form">Login</button></div>`);
+        <div class="modal-foot"><button class="btn ghost" id="a-cancel">Cancel</button><button class="btn primary" id="a-submit" form="a-form" style="flex:1">Login</button></div>`);
       const setMode = (m) => {
         modalMode = m;
         $('#t-login').classList.toggle('active', m === 'login');
@@ -326,9 +329,8 @@
     function renderUserChip() {
       const chip = $('#user-chip');
       if (!state.user) {
-        chip.innerHTML = `<button class="btn ghost sm" id="login-btn">Log in</button><button class="btn primary sm" id="signup-btn">Sign up</button>`;
-        $('#login-btn').onclick = () => openAuthModal('login');
-        $('#signup-btn').onclick = () => openAuthModal('register');
+        chip.innerHTML = `<button class="btn primary sm" id="auth-btn">Login / Sign up</button>`;
+        $('#auth-btn').onclick = () => openAuthModal('login');
         return;
       }
       chip.innerHTML = `
